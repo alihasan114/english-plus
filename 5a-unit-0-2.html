@@ -150,15 +150,14 @@ h1{font-size:clamp(40px,5.6vw,75px);line-height:1.08;letter-spacing:-.045em;marg
       <p class="example hidden" id="example">Example: <strong>I’m [A] into [B] cycling [C]</strong> → I’m <strong>not</strong> into cycling → select <strong>A</strong>.</p>
       <div id="legend" class="choice-legend" aria-label="Answer choices"></div>
       <div class="cards-wrap"><div id="questions" class="question-grid"></div></div>
-      <div class="footer-actions"><div class="footer-info">Your answers are saved as you select them. No answers are shown until the end.</div><button class="primary next" id="next" type="button">Next block →</button></div>
+      <div class="footer-actions"><div class="footer-info">Your answers are saved as you select them. The answer key is not shown in Student Mode.</div><button class="primary next" id="next" type="button">Next block →</button></div>
     </section>
     <section id="results" class="view" aria-label="Test results">
       <div class="result-shell"><div class="result-card">
         <div class="result-label">Unit 0.2 · Finished</div><h2 class="result-title">Your results</h2><div id="score" class="score">0 <small>/ 30</small></div>
         <div id="grade" class="grade-line"></div>
         <div class="result-grid"><div class="result-mini"><b id="correct-count">0</b><span>Correct</span></div><div class="result-mini"><b id="wrong-count">0</b><span>Incorrect</span></div><div class="result-mini"><b id="percent">0%</b><span>Accuracy</span></div></div>
-        <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:10px"><button class="primary" id="restart" type="button">Try again</button><button class="secondary" id="show-answers" type="button" aria-expanded="false">Show answer key</button><button class="secondary" id="print" type="button">Print result</button></div>
-        <div class="review hidden" id="review"></div>
+        <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:10px"><button class="primary" id="restart" type="button">Try again</button><button class="secondary" id="print" type="button">Print result</button></div>
         <div class="mini-note">Practice-only result. Answers are checked in this browser; no online class journal is connected.</div>
       </div></div>
     </section>
@@ -227,18 +226,7 @@ function finish(){
  $('score').innerHTML=`${correct} <small>/ 30</small>`;
  $('correct-count').textContent=correct;$('wrong-count').textContent=30-correct;$('percent').textContent=Math.round(correct/30*100)+'%';
  $('grade').textContent=`Suggested practice grade: ${grade(correct)}`;
- $('review').classList.add('hidden');$('review').innerHTML='';$('show-answers').textContent='Show answer key';$('show-answers').setAttribute('aria-expanded','false');
  showView('results');window.scrollTo(0,0);
-}
-function showAnswers(){
- const r=$('review'),btn=$('show-answers');
- if(!r.classList.contains('hidden')){r.classList.add('hidden');btn.textContent='Show answer key';btn.setAttribute('aria-expanded','false');return;}
- r.innerHTML=BLOCKS.map(b=>`<h3>${htmlEscape(b.name)} · ${htmlEscape(b.range)}</h3>`+b.questions.map(q=>{
-   const own=state.answers[q.n]||'—',good=own===q.answer;
-   const answerWord=b.mode==='position'?`insert “not” at ${q.answer}`:(b.choices.find(c=>c[0]===q.answer)||[])[1];
-   return `<div class="review-item"><span class="check-circle ${good?'right':'wrong'}">${good?'✓':'✗'}</span><b>${q.n}.</b> ${htmlEscape(q.text.replace(/__([A-E])/g,'[$1]'))}<small>Correct: <b class="right">${q.answer}</b> (${htmlEscape(answerWord||'')}) · Your choice: <b class="${good?'right':'wrong'}">${own}</b></small></div>`;
- }).join('')).join('');
- r.classList.remove('hidden');btn.textContent='Hide answer key';btn.setAttribute('aria-expanded','true');
 }
 async function requestFullscreen(){try{if(!document.fullscreenElement&&document.documentElement.requestFullscreen)await document.documentElement.requestFullscreen();else if(document.fullscreenElement&&document.exitFullscreen)await document.exitFullscreen();}catch(_err){/* Browser may deny fullscreen; the test still works. */}}
 $('start').addEventListener('click',()=>{state.block=0;state.answers={};state.finished=false;showView('exercise');render();if(!document.fullscreenElement)requestFullscreen();});
@@ -251,7 +239,6 @@ $('questions').addEventListener('click',event=>{
  if(BLOCKS[state.block].mode==='position')updateSlots();
  const b=BLOCKS[state.block];$('answered').textContent=`${b.questions.filter(q=>state.answers[q.n]).length} / ${b.questions.length} answered`;
 });
-$('show-answers').addEventListener('click',showAnswers);
 $('restart').addEventListener('click',()=>{state.block=0;state.answers={};state.finished=false;showView('exercise');render();});
 $('fullscreen').addEventListener('click',requestFullscreen);
 $('print').addEventListener('click',()=>window.print());
