@@ -1,0 +1,33 @@
+/* L7 TEST Account Header v2 — styles scoped to unique widget id */
+#l7-account-header{--l7-ink:#15294d;--l7-blue:#305dca;--l7-line:#dce5f2;--l7-muted:#60718d;display:block;width:100%;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;background:#fff;color:var(--l7-ink);border-bottom:1px solid var(--l7-line)}
+#l7-account-header,#l7-account-header *{box-sizing:border-box}
+#l7-account-header .l7h-bar{display:flex;align-items:center;gap:clamp(9px,1.7vw,22px);max-width:1500px;min-height:72px;padding:10px 22px;margin:0 auto}
+#l7-account-header a{text-decoration:none}
+#l7-account-header .l7h-brand{display:inline-flex;align-items:center;gap:9px;white-space:nowrap;color:var(--l7-ink);flex:none}
+#l7-account-header .l7h-logo{display:grid;place-items:center;width:39px;height:39px;border-radius:11px;background:#193a77;color:white;font-size:17px;font-weight:900;line-height:1}
+#l7-account-header .l7h-brand-name{font-size:17px;font-weight:850;letter-spacing:.01em}
+#l7-account-header .l7h-nav{display:flex;align-items:center;gap:5px;flex:1;min-width:0;overflow-x:auto;white-space:nowrap;scrollbar-width:thin;scrollbar-color:#c7d7f1 transparent;padding:4px 2px}
+#l7-account-header .l7h-nav-link{display:inline-flex;justify-content:center;align-items:center;border-radius:8px;border:1px solid #d9e3f3;background:#f4f7fc;color:#2d4772;min-width:32px;min-height:32px;padding:5px 9px;font-size:13px;font-weight:750;line-height:1;flex:none}
+#l7-account-header .l7h-nav-link:hover{background:#e7efff;border-color:#b2c7ef}
+#l7-account-header .l7h-nav-link.l7h-active{background:#285ac3;color:#fff;border-color:#285ac3}
+#l7-account-header .l7h-account{display:flex;justify-content:flex-end;align-items:center;gap:8px;flex:none;min-width:0}
+#l7-account-header .l7h-person{display:flex;align-items:center;gap:8px;min-width:0}
+#l7-account-header .l7h-avatar{flex:none;width:36px;height:36px;border-radius:50%;background:#e5efff;border:1px solid #bed3f7;color:#2557b0;display:grid;place-items:center;font-weight:800;font-size:15px}
+#l7-account-header .l7h-detail{display:flex;flex-direction:column;gap:3px;min-width:0}
+#l7-account-header .l7h-person-name{font-size:13px;line-height:1.1;font-weight:850;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#l7-account-header .l7h-meta{display:flex;gap:5px;align-items:center}
+#l7-account-header .l7h-badge{display:inline-flex;align-items:center;border-radius:6px;background:#ebf1fe;color:#2d58b0;font-size:10px;line-height:1;padding:4px 6px;font-weight:750}
+#l7-account-header .l7h-badge.l7h-teacher{background:#e9f6ee;color:#16794c}
+#l7-account-header .l7h-badge.l7h-pending{background:#fff0ce;color:#885d08}
+#l7-account-header .l7h-badge.l7h-rejected{background:#ffe5e9;color:#ac3349}
+#l7-account-header .l7h-class{font-size:11px;font-weight:700;color:var(--l7-muted)}
+#l7-account-header .l7h-action{appearance:none;border:1px solid #d5e0ef;background:#fff;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;padding:8px 10px;color:#274b82;font-family:inherit;font-size:12px;line-height:1.1;font-weight:750;white-space:nowrap;cursor:pointer;min-height:32px}
+#l7-account-header .l7h-action:hover{background:#f1f6ff}
+#l7-account-header .l7h-action.l7h-main-action{background:var(--l7-blue);color:#fff;border-color:var(--l7-blue)}
+#l7-account-header .l7h-action:disabled{opacity:.55;cursor:wait}
+#l7-account-header .l7h-status{color:var(--l7-muted);font-size:12px;white-space:nowrap}
+#l7-account-header .l7h-error{color:#a33e47}
+#l7-account-header a:focus-visible,#l7-account-header button:focus-visible{outline:3px solid #6e9cff;outline-offset:2px}
+@media(max-width:1040px){#l7-account-header .l7h-bar{padding:10px 12px;gap:9px}#l7-account-header .l7h-brand-name{font-size:15px}#l7-account-header .l7h-person-name{max-width:105px}#l7-account-header .l7h-nav-link{padding:5px 7px}}
+@media(max-width:740px){#l7-account-header .l7h-bar{flex-wrap:wrap;gap:5px 8px;padding:8px 12px}#l7-account-header .l7h-brand{order:1}#l7-account-header .l7h-account{order:2;margin-left:auto}#l7-account-header .l7h-nav{flex:0 0 100%;order:3;padding:5px 0 2px;gap:6px}#l7-account-header .l7h-person-name{max-width:120px}#l7-account-header .l7h-logo{width:32px;height:32px;font-size:14px}#l7-account-header .l7h-brand-name{font-size:15px}#l7-account-header .l7h-avatar{display:none}#l7-account-header .l7h-my-account{display:none}}
+@media(max-width:420px){#l7-account-header .l7h-person-name{max-width:92px}#l7-account-header .l7h-signout{padding:7px 8px}#l7-account-header .l7h-status{font-size:11px}#l7-account-header .l7h-nav-link{min-height:31px}}
