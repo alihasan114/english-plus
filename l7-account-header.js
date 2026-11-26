@@ -1,4 +1,4 @@
-/* L7 TEST — header v2. Client-side display, not an access-control barrier. */
+/* L7 TEST — header v5 (compact teacher-only Journal link). Client-side display, not an access-control barrier. */
 (() => {
   'use strict';
   const root = document.getElementById('l7-account-header');
@@ -39,6 +39,37 @@
     const nav=node('nav','l7h-nav');
     nav.setAttribute('aria-label','Class navigation');
     const current=location.pathname.replace(/\/+$/,'') || '/';
+    // Only display this convenient link for an AUTHENTICATED, APPROVED teacher
+    // who is assigned to 5A. Database RLS remains the actual access barrier.
+    const isApproved5ATeacher = Boolean(
+      state.user && state.profile?.role === 'teacher' &&
+      state.profile?.status === 'approved' && state.classes.includes('5A')
+    );
+    if (isApproved5ATeacher) {
+      const journalHref=config.journalPage || '/5a-journal';
+      const journal=a('Journal',journalHref,'l7h-nav-link l7h-journal-link');
+      journal.setAttribute('aria-label','Open 5A Online Test Journal');
+      journal.style.background='#e5f5ef';
+      journal.style.borderColor='#a7dbc8';
+      journal.style.color='#14634c';
+      journal.style.fontWeight='750';
+      journal.style.fontSize='12px';
+      journal.style.padding='4px 8px';
+      journal.style.minWidth='auto';
+      journal.style.minHeight='27px';
+      journal.style.lineHeight='1.1';
+      journal.style.whiteSpace='nowrap';
+      try {
+        if (new URL(journalHref,location.origin).pathname.replace(/\/+$/,'') === current) {
+          journal.classList.add('l7h-active');
+          journal.setAttribute('aria-current','page');
+          journal.style.background='#176b50';
+          journal.style.borderColor='#176b50';
+          journal.style.color='#ffffff';
+        }
+      } catch (_) { /* Ignore malformed custom URL. */ }
+      nav.append(journal);
+    }
     for (const item of navItems) {
       if (!item || !item.label || !item.href) continue;
       const link=a(item.label, item.href, 'l7h-nav-link');
