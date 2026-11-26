@@ -135,7 +135,7 @@ select.filled{border-color:#50ad9e;background:#effbf8}
  <div class="kicker">Exercise completed</div>
  <h1>Your result</h1><p id="saveStatus" role="status" aria-live="polite"></p>
  <div class="score"><span id="totalScore">0</span><small> / 21</small></div>
- <p id="scoreMessage" class="instructions"></p>
+ <p id="scoreMessage" class="instructions"></p><p class="tiny">Each completed attempt is saved separately in the teacher journal.</p>
  <div class="result-grid" id="resultGrid"></div>
  <div class="nav-actions"><button class="primary" id="restartButton">Try again</button><button class="ghost hide" id="retrySave" type="button">Retry saving</button></div>
 
@@ -245,7 +245,9 @@ async function submitOnline(){
   el('totalScore').textContent=String(score);
   el('scoreMessage').textContent='Grade: '+grade+' · '+percent+'%';
   el('resultGrid').innerHTML='<div class="result-part"><b>'+score+' / '+total+'</b><span>Saved in your teacher’s online journal</span></div>';
-  el('saveStatus').className='success';el('saveStatus').textContent='✓ Result saved online';
+  el('saveStatus').className='success';
+  const receipt=String(data.result_id||'').slice(0,8);
+  el('saveStatus').textContent='✓ Result saved online · '+new Date().toLocaleString()+(receipt?' · ID: '+receipt:'');
   el('restartButton').disabled=false;
  }catch(e){
   el('totalScore').textContent='—';
