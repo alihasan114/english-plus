@@ -1,149 +1,268 @@
-/* L7 TEST – embedded Tilda account widget, v1. No secret/service_role keys here. */
+/* L7 TEST Accounts v2 — students: Username + Password, teachers: Email + Password.
+   This is Tilda page code. NO secret key / password list appears in this file.
+   Students are provisioned by their APPROVED 5A teacher through a verified
+   Supabase Edge Function. Existing tests use the same Supabase session. */
 (() => {
   'use strict';
   const root = document.getElementById('l7-accounts');
   if (!root || root.dataset.ready === '1') return;
   root.dataset.ready = '1';
-  const config = window.L7_ACCOUNTS_CONFIG || {};
-  const demo = config.demo === true;
-  const classCode = '5A';
-  const state = { client:null, profile:null, user:null, view:'login', busy:false,
-    msg:'', error:false, recovery:false, teacherClasses:[], students:[], chosenClass:'5A',
-    demoRole:null, demoName:'', demoStudents:[
-      {id:'demo-a', display_name:'Student A',class_code:'5A',role:'student',status:'pending'},
-      {id:'demo-b', display_name:'Student B',class_code:'5A',role:'student',status:'approved'},
-      {id:'demo-c', display_name:'Student C',class_code:'5A',role:'student',status:'pending'}
-    ]};
-  const esc = v => String(v ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const tr = {'pending':'Pending approval','approved':'Approved','rejected':'Not approved'};
-  function note(msg, error=false){state.msg=msg;state.error=error;render();}
-  function statusMarkup(){return state.msg ? `<div class="l7-status show ${state.error?'error':'success'}" role="status">${esc(state.msg)}</div>`:'';}
-  function input(label,name,type='text',autofill='',extra=''){
-    return `<div class="l7-field"><label for="l7-${name}">${label}</label><input id="l7-${name}" name="${name}" type="${type}" ${autofill?`autocomplete="${autofill}"`:''} ${extra} required></div>`;
+  const cfg = window.L7_ACCOUNTS_CONFIG || {};
+  const INTERNAL_DOMAIN = 'students.l7-test.online';
+  const LOGIN_PATTERN = /^[a-z0-9][a-z0-9_-]{2,18}[a-z0-9]$/;
+  const state = {
+    client:null, user:null, profile:null, students:[], teacherClasses:[],
+    view:'student', teacherForm:'login', busy:false, notice:'', isError:false,
+    importRows:[], importErrors:[], resettingId:null
+  };
+  const $ = s => root.querySelector(s);
+  const esc = x => String(x ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const normalizedLogin = x => String(x || '').trim().toLowerCase();
+  const emailFor = username => `${username}@${INTERNAL_DOMAIN}`;
+  const statusLabel = {pending:'Pending',approved:'Approved',rejected:'Rejected'};
+
+  function notice(text, error=false) {state.notice=String(text);state.isError=error;render();}
+  function banner(){return state.notice ? `<div class="l7-status show ${state.isError?'error':'success'}" role="status">${esc(state.notice)}</div>` : '';}
+  function field(label,name,type='text',autofill='',extra='') {
+    return `<div class="l7-field"><label for="l7-${esc(name)}">${esc(label)}</label><input id="l7-${esc(name)}" name="${esc(name)}" type="${esc(type)}" ${autofill?`autocomplete="${esc(autofill)}"`:''} ${extra} required></div>`;
   }
-  function formMarkup(){
-    const tabs = `<div class="l7-nav"><button type="button" class="l7-btn ${state.view==='login'?'':'l7-ghost'}" data-action="view-login">Sign in</button><button type="button" class="l7-btn ${state.view==='signup'?'':'l7-ghost'}" data-action="view-signup">Create account</button></div>`;
-    if(state.view==='reset') return `<div class="l7-card"><h3>Set a new password</h3><form data-form="reset">${input('New password','password','password','new-password','minlength="10"')}<button class="l7-btn">Save password</button></form></div>`;
-    if(state.view==='recover') return `<div class="l7-card"><h3>Reset password</h3><p class="l7-muted">Enter the email address for your account.</p><form data-form="recover">${input('Email address','email','email','email')}<button class="l7-btn">Send reset link</button> <button type="button" class="l7-btn l7-ghost" data-action="view-login">Back</button></form></div>`;
-    if(state.view==='signup') return `<div class="l7-card">${tabs}<h3>Join class 5A</h3><p class="l7-muted">Students register first. A teacher must approve the account. Teachers are added only by the site administrator.</p><form data-form="signup">${input('Your name','name','text','name','minlength="2" maxlength="70"')}${input('Email address','email','email','email')}${input('Password (at least 10 characters)','password','password','new-password','minlength="10"')}<p class="l7-note">This is a test system for a class of children. Do not create real student accounts until the school has arranged the required permissions and privacy information.</p><button class="l7-btn l7-wide" type="submit">Request account</button></form></div>`;
-    return `<div class="l7-card">${tabs}<h3>Welcome back</h3><p class="l7-muted">Sign in with your registered account.</p><form data-form="login">${input('Email address','email','email','email')}${input('Password','password','password','current-password')}<button class="l7-btn l7-wide" type="submit">Sign in</button></form><p><button type="button" class="l7-btn l7-ghost" data-action="view-recover">Forgot password?</button></p></div>`;
-  }
-  function welcome(){
-    const name = esc(state.profile?.display_name || state.demoName || 'Student');
-    const role = state.profile?.role || state.demoRole;
-    const status = state.profile?.status || (demo?'pending':'pending');
-    if(role==='teacher'){
-      const rows = state.students.map(s=>`<div class="l7-user-row"><div><strong>${esc(s.display_name)}</strong> <span class="l7-badge ${esc(s.status)}">${esc(tr[s.status]||s.status)}</span><div class="l7-muted">${esc(s.class_code)}</div></div><div class="l7-actions">${s.status!=='approved'?`<button class="l7-btn" data-action="approve" data-id="${esc(s.id)}">Approve</button>`:''}${s.status!=='rejected'?`<button class="l7-btn l7-danger" data-action="reject" data-id="${esc(s.id)}">Reject</button>`:''}</div></div>`).join('') || '<p class="l7-muted">No student requests yet.</p>';
-      const options = state.teacherClasses.map(c=>`<option ${state.chosenClass===c?'selected':''} value="${esc(c)}">${esc(c)}</option>`).join('');
-      return `<div class="l7-card"><div class="l7-top"><div><span class="l7-badge approved">Teacher Mode</span><h3>${name}</h3></div><button class="l7-btn l7-ghost" data-action="signout">Sign out</button></div><p>Student registration requests and access control.</p><p><label for="l7-class">Class</label><select id="l7-class" style="font:inherit;padding:10px;border:1px solid #cad5e4;border-radius:10px;min-width:120px">${options}</select></p><div class="l7-count">${state.students.length}</div><p class="l7-muted">Students and requests</p>${rows}<p class="l7-note">This page manages registration approval only. Test grades and secured exam access are the next stage.</p></div>`;
+  function tabs(){return `<div class="l7-nav l7-auth-tabs" role="group" aria-label="Account type">
+      <button class="l7-btn ${state.view==='student'?'':'l7-ghost'}" data-act="tab-student" type="button">Student · Username</button>
+      <button class="l7-btn ${state.view==='teacher'?'':'l7-ghost'}" data-act="tab-teacher" type="button">Teacher · Email</button>
+    </div>`;}
+  function signinScreen(){
+    if(state.view==='teacher'){
+      const f = state.teacherForm;
+      let content;
+      if(f==='recover') content = `<h3>Teacher password recovery</h3><p class="l7-muted">A reset link will be sent to your teacher email.</p><form data-form="teacher-recover">${field('Teacher email','email','email','email')}<button class="l7-btn">Send reset link</button></form>`;
+      else if(f==='signup') content=`<h3>Create a teacher email account</h3><p class="l7-muted">New accounts start as students/pending. Only the site administrator can grant a teacher role.</p><form data-form="teacher-signup">${field('Your name','name','text','name','minlength="2" maxlength="70"')}${field('Email','email','email','email')}${field('Password (12+ characters)','password','password','new-password','minlength="12"')}<button class="l7-btn l7-wide">Request email account</button></form>`;
+      else if(f==='reset') content=`<h3>Set a new teacher password</h3><form data-form="teacher-reset">${field('New password (12+ characters)','password','password','new-password','minlength="12"')}<button class="l7-btn">Save password</button></form>`;
+      else content=`<h3>Teacher sign in</h3><p class="l7-muted">Teachers keep their existing email accounts.</p><form data-form="teacher-login">${field('Email address','email','email','email')}${field('Password','password','password','current-password')}<button class="l7-btn l7-wide">Sign in</button></form>`;
+      const options=`<div class="l7-row l7-links"><button type="button" class="l7-text-btn" data-act="teacher-login">Sign in</button><button type="button" class="l7-text-btn" data-act="teacher-recover">Forgot password?</button><button type="button" class="l7-text-btn" data-act="teacher-signup">Create account</button></div>`;
+      return `<div class="l7-card">${tabs()}${content}${options}</div>`;
     }
-    return `<div class="l7-card"><div class="l7-top"><div><span class="l7-badge ${esc(status)}">${esc(tr[status]||status)}</span><h3>Hello, ${name}!</h3></div><button class="l7-btn l7-ghost" data-action="signout">Sign out</button></div><p>Class: <strong>5A</strong></p>${status==='approved'?'<p>Your account is approved. Your personal test page will appear here when tests are connected to secure accounts.</p>':status==='rejected'?'<p>Please contact your teacher about this request.</p>':'<p>Your registration request has been sent. You can sign in, but your teacher must approve your account before access is granted.</p>'}<p class="l7-note">Existing public HTML tests are not yet protected by this login. Do not treat results from public test pages as authenticated grades.</p></div>`;
+    return `<div class="l7-card">${tabs()}<h3>Student sign in</h3><p class="l7-muted">Use the personal username and password given by your teacher. No email is needed.</p>
+      <form data-form="student-login">${field('Username','username','text','username','autocapitalize="none" spellcheck="false" minlength="4" maxlength="20" placeholder="5a-rizwan"')}${field('Password','password','password','current-password','minlength="12"')}
+      <button class="l7-btn l7-wide">Sign in</button></form><p class="l7-note">Forgot your password? Ask your teacher to reset it. Never share your password with classmates.</p></div>`;
+  }
+  function teacherScreen(){
+    const pending = state.students.filter(s=>s.status==='pending');
+    const lines=state.students.map(s=>`<div class="l7-user-row">
+      <div><strong>${esc(s.display_name)}</strong> <span class="l7-badge ${esc(s.status)}">${esc(statusLabel[s.status]||s.status)}</span>
+        <div class="l7-muted"><code>${esc(s.username||'Email account')}</code> · ${esc(s.class_code)}</div></div>
+      <div class="l7-actions">${s.status!=='approved'?`<button type="button" class="l7-btn" data-act="approve" data-id="${esc(s.id)}">Approve</button>`:''}
+        ${s.status!=='rejected'?`<button type="button" class="l7-btn l7-danger" data-act="reject" data-id="${esc(s.id)}">Reject</button>`:''}
+        ${s.username?`<button type="button" class="l7-btn l7-ghost" data-act="reset" data-id="${esc(s.id)}">Reset password</button>`:''}
+      </div></div>`).join('') || '<p class="l7-muted">No student accounts yet.</p>';
+    const preview = state.importRows.length ? `<div class="l7-preview"><p><strong>${state.importRows.length} students ready to create</strong> (passwords hidden)</p>
+      <div class="l7-preview-list">${state.importRows.map(s=>`<div>${esc(s.name)} · <code>${esc(s.username)}</code></div>`).join('')}</div>
+      <button type="button" class="l7-btn" data-act="create-batch">Create these accounts</button>
+      <button type="button" class="l7-btn l7-ghost" data-act="clear-batch">Cancel</button></div>` : '';
+    const resetStudent=state.students.find(s=>s.id===state.resettingId);
+    const resetBlock=resetStudent?`<div class="l7-reset-panel"><h3>New password for ${esc(resetStudent.display_name)}</h3>
+        <form data-form="reset-student">${field('New password (12+ characters)','newPassword','password','new-password','minlength="12"')}<button class="l7-btn">Save new password</button>
+        <button type="button" class="l7-btn l7-ghost" data-act="cancel-reset">Cancel</button></form>
+        <p class="l7-muted">Write the password down securely before submitting: it cannot be read back from Supabase.</p></div>`:'';
+    return `<div class="l7-card"><div class="l7-top"><div><span class="l7-badge approved">Approved teacher · 5A</span><h3>${esc(state.profile?.display_name||'Teacher')}</h3></div>
+      <button class="l7-btn l7-ghost" data-act="signout" type="button">Sign out</button></div>
+      <div class="l7-section"><h3>Create student accounts</h3><p class="l7-muted">Import the private CSV given by L7 TEST. New students will be Pending until you approve them.</p>
+      <label for="l7-csv">Choose the private CSV file</label><input id="l7-csv" type="file" accept=".csv,text/csv,text/plain">
+      <p class="l7-muted l7-small">Required columns: name, username, password. The passwords are sent only to the Supabase student administration function, never to GitHub.</p>${preview}</div>
+      ${resetBlock}
+      <div class="l7-section"><div class="l7-top"><h3>Students (${state.students.length})</h3>${pending.length?`<button type="button" class="l7-btn l7-ghost" data-act="approve-all">Approve all pending (${pending.length})</button>`:''}</div>
+        <p class="l7-muted">Newly created accounts do not get test access until Approved.</p>${lines}</div>
+      </div>`;
+  }
+  function studentScreen(){
+    const p=state.profile||{};
+    return `<div class="l7-card"><div class="l7-top"><div><span class="l7-badge ${esc(p.status)}">${esc(statusLabel[p.status]||p.status||'Student')}</span><h3>Hello, ${esc(p.display_name||'Student')}!</h3></div>
+      <button type="button" class="l7-btn l7-ghost" data-act="signout">Sign out</button></div>
+      <p>Class: <strong>${esc(p.class_code||'5A')}</strong>${p.username?` · Username: <strong>${esc(p.username)}</strong>`:''}</p>
+      ${p.status==='approved'?'<p>Your account is approved. You may now open Unit 0.1, 0.2 and 0.3 from the class page.</p>':p.status==='pending'?'<p>Your account has been created. Please wait for your teacher to approve it before starting a test.</p>':'<p>Your account is not approved. Contact your teacher.</p>'}</div>`;
   }
   function render(){
-    const missing = !demo && (!/^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(config.supabaseUrl||'') || !String(config.publishableKey||'').trim() || /REPLACE|YOUR_KEY/i.test(config.publishableKey||''));
-    const header = `<div class="l7-head"><div class="l7-kicker">L7 TEST · English Learning Platform</div><h2>Accounts & Classroom</h2><p>Student registration · Teacher approval · Class 5A</p></div>`;
-    let content = '';
-    if (missing) content=`<div class="l7-card l7-setup"><h3>Supabase connection needed</h3><p>The account interface is ready, but a Supabase project has not been connected yet.</p><p>Fill in <code>supabaseUrl</code> and <code>publishableKey</code> in the Tilda installation code and run <code>setup.sql</code> first.</p></div>`;
-    else if (!state.user && !state.demoRole) content=formMarkup();
-    else content=welcome();
-    const demobar = demo?'<div class="l7-demo">DEMO ONLY — no real accounts or passwords are created. <button class="l7-btn l7-ghost" data-action="demo-teacher">Teacher demo</button> <button class="l7-btn l7-ghost" data-action="demo-student">Student demo</button></div>':'';
-    root.innerHTML=`<div class="l7-shell">${header}${demobar}${statusMarkup()}${content}<p class="l7-muted" style="font-size:12px;margin:18px 0 0">L7 TEST · Prototype of secure account management</p></div>`;
+    const setup = !/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(String(cfg.supabaseUrl||'')) || !String(cfg.publishableKey||'').trim() || /REPLACE|YOUR_KEY/i.test(String(cfg.publishableKey||''));
+    const content = setup?`<div class="l7-card l7-setup">The existing Supabase URL and publishable key must remain in the Tilda T123 configuration.</div>`:
+      !state.user?signinScreen():state.profile?.role==='teacher'?
+      ((state.profile?.status==='approved' && state.teacherClasses.includes('5A'))
+       ?teacherScreen()
+       :`<div class="l7-card"><h3>Teacher account</h3><p class="l7-muted">Only an approved teacher assigned to class 5A can create or approve students. Ask the site administrator to check your teacher account.</p><button class="l7-btn l7-ghost" data-act="signout" type="button">Sign out</button></div>`)
+      :studentScreen();
+    root.innerHTML=`<div class="l7-shell"><div class="l7-head"><div class="l7-kicker">L7 TEST · Accounts</div><h2>Welcome to L7 TEST</h2><p>Class 5A · Secure student accounts</p></div>${banner()}${content}</div>`;
   }
-  async function loadStudents(){
-    if(demo){state.teacherClasses=['5A'];state.chosenClass='5A';state.students=[...state.demoStudents];return;}
-    const res=await state.client.from('teacher_classes').select('class_code').eq('teacher_id',state.user.id);
-    if(res.error)throw res.error;
-    state.teacherClasses=res.data.map(x=>x.class_code);
-    if(!state.teacherClasses.includes(state.chosenClass)) state.chosenClass=state.teacherClasses[0]||'';
-    if(!state.chosenClass){state.students=[];return;}
-    const q=await state.client.from('profiles').select('id,display_name,role,status,class_code,created_at')
-      .eq('class_code',state.chosenClass).eq('role','student').order('display_name');
-    if(q.error)throw q.error;state.students=q.data;
+  function parseCSV(text){
+    const table=[];let row=[],cell='',inside=false;
+    for(let i=0;i<text.length;i++){
+      const c=text[i];
+      if(inside){if(c==='"' && text[i+1]==='"'){cell+='"';i++;}else if(c==='"')inside=false;else cell+=c;}
+      else if(c==='"')inside=true;
+      else if(c===','){row.push(cell);cell='';}
+      else if(c==='\n'){row.push(cell);table.push(row);row=[];cell='';}
+      else if(c!=='\r')cell+=c;
+    }
+    if(inside) throw new Error('CSV has an unclosed quote.');
+    if(cell||row.length){row.push(cell);table.push(row);}
+    if(!table.length) throw new Error('CSV is empty.');
+    const keys=table.shift().map(k=>k.replace(/^\uFEFF/,'').trim().toLowerCase());
+    const ix={name:keys.indexOf('name'),username:keys.indexOf('username'),password:keys.indexOf('password')};
+    if(Object.values(ix).some(n=>n<0))throw new Error('CSV needs: name,username,password columns.');
+    const entries=table.filter(r=>r.some(v=>v.trim())).map(r=>({name:(r[ix.name]||'').trim(),username:normalizedLogin(r[ix.username]),password:r[ix.password]||''}));
+    if(!entries.length||entries.length>15)throw new Error('Please import 1–15 students at a time.');
+    if(entries.some(r=>r.name.length<2||r.name.length>70||!LOGIN_PATTERN.test(r.username)||r.password.length<12||r.password.length>72))
+      throw new Error('Check student names, usernames (4–20) and passwords (12+).');
+    if(new Set(entries.map(r=>r.username)).size!==entries.length)throw new Error('Duplicate username in CSV.');
+    return entries;
+  }
+  async function getStudents(){
+    if(!state.client||!state.user||state.profile?.role!=='teacher')return;
+    const c=await state.client.from('teacher_classes').select('class_code').eq('teacher_id',state.user.id);
+    if(c.error)throw c.error;
+    state.teacherClasses=(c.data||[]).map(x=>x.class_code);
+    if(!state.teacherClasses.includes('5A')){state.students=[];return;}
+    const q=await state.client.from('profiles').select('id,display_name,role,status,class_code,username')
+      .eq('class_code','5A').eq('role','student').order('display_name');
+    if(q.error)throw q.error;
+    state.students=q.data||[];
   }
   async function refreshUser(){
-    if(demo)return render();
-    const {data,error}=await state.client.auth.getUser();
-    if(error || !data?.user){state.user=null;state.profile=null;return render();}
-    state.user=data.user;
-    const p=await state.client.from('profiles').select('id,display_name,role,status,class_code').eq('id',state.user.id).single();
-    if(p.error){state.msg='Account created, but profile is not available yet. Try signing in again.';state.error=true;state.user=null;return render();}
+    const r=await state.client.auth.getUser();
+    if(r.error || !r.data?.user){state.user=null;state.profile=null;render();return;}
+    state.user=r.data.user;
+    state.teacherClasses=[];
+    state.students=[];
+    const p=await state.client.from('profiles').select('id,display_name,role,status,class_code,username')
+      .eq('id',state.user.id).single();
+    if(p.error){state.user=null;state.profile=null;notice('Profile is not available. Please sign in again.',true);return;}
     state.profile=p.data;
-    if(p.data.role==='teacher' && p.data.status==='approved')await loadStudents();
+    if(p.data.role==='teacher' && p.data.status==='approved') await getStudents();
     render();
   }
-  async function action(a, button){
-    if(a.startsWith('view-')){state.view=a.slice(5);state.msg='';return render();}
-    if(a==='demo-teacher'){state.demoRole='teacher';state.demoName='Teacher Demo';state.msg='';await loadStudents();return render();}
-    if(a==='demo-student'){state.demoRole='student';state.demoName='Student Demo';state.msg='';return render();}
-    if(a==='signout'){
-      if(demo){state.demoRole=null;state.profile=null;state.user=null;state.view='login';return render();}
-      const r=await state.client.auth.signOut();if(r.error)return note(r.error.message,true);
-      state.user=null;state.profile=null;state.view='login';return note('You have signed out.');
+  async function callTeacher(payload){
+    if(!state.client||state.profile?.role!=='teacher')throw new Error('Teacher account required.');
+    const session=await state.client.auth.getSession();
+    if(!session.data?.session)throw new Error('Teacher session expired. Please sign in again.');
+    const r=await state.client.functions.invoke('l7-student-admin',{body:payload});
+    if(r.error){
+      let reason='Student administration function error. Check deployment and teacher permissions.';
+      try { const detail=await r.error.context?.json?.();if(detail?.error)reason=detail.error; }catch(_){}
+      throw new Error(reason);
     }
-    if(a==='approve'||a==='reject'){
-      if(button.disabled)return;button.disabled=true;
-      const id=button.dataset.id;const status=a==='approve'?'approved':'rejected';
-      if(demo){const s=state.demoStudents.find(s=>s.id===id);if(s)s.status=status;await loadStudents();return render();}
-      const r=await state.client.from('profiles').update({status}).eq('id',id).eq('role','student').eq('class_code',state.chosenClass).select('id,status');
-      if(r.error || !r.data?.length)return note(r.error?.message||'Permission denied or account not found.',true);
-      await loadStudents();return note('Student status updated.');
+    if(r.data?.error)throw new Error(r.data.error);
+    return r.data;
+  }
+  async function doAction(action,button){
+    if(action==='tab-student'||action==='tab-teacher'){
+      state.view=action.split('-')[1];state.notice='';state.teacherForm='login';render();return;
+    }
+    if(action.startsWith('teacher-')){state.teacherForm=action.slice(8);state.notice='';render();return;}
+    if(action==='signout'){
+      const r=await state.client.auth.signOut();if(r.error)throw r.error;
+      state.user=null;state.profile=null;state.students=[];state.teacherClasses=[];state.view='student';state.importRows=[];
+      notice('Signed out successfully.');return;
+    }
+    if(action==='clear-batch'){state.importRows=[];notice('Student import cancelled.');return;}
+    if(action==='cancel-reset'){state.resettingId=null;render();return;}
+    if(action==='reset'){state.resettingId=button.dataset.id;state.notice='';render();return;}
+    if(action==='create-batch'){
+      if(state.busy)return;state.busy=true;button.disabled=true;
+      try{
+        const r=await callTeacher({action:'createStudents',students:state.importRows});
+        state.importRows=[];
+        await getStudents();
+        const failures=(r.results||[]).filter(x=>!x.ok).map(x=>`${x.username}: ${x.error}`).join('\n');
+        notice(`Created: ${r.created||0}. Failed: ${r.failed||0}. ${failures}`,(r.failed||0)>0);
+      } finally {state.busy=false;}
+      return;
+    }
+    if(action==='approve'||action==='reject'||action==='approve-all'){
+      const next=action==='reject'?'rejected':'approved';
+      const ids=action==='approve-all'?state.students.filter(x=>x.status==='pending').map(x=>x.id):[button.dataset.id];
+      if(!ids.length)return;
+      if(action==='approve-all' && !window.confirm(`Approve ${ids.length} pending student accounts?`))return;
+      const q=await state.client.from('profiles').update({status:next}).in('id',ids).eq('role','student').eq('class_code','5A').select('id');
+      if(q.error || (q.data||[]).length!==ids.length)throw new Error(q.error?.message||'Status was not updated for all students.');
+      await getStudents();notice('Student access updated.');return;
     }
   }
-  root.addEventListener('click', async e=>{
-    const target=e.target.closest('[data-action]');if(!target)return;
-    try{await action(target.dataset.action,target)}catch(err){note(err.message||'Something went wrong.',true)}
+  root.addEventListener('click',async event=>{
+    const btn=event.target.closest('[data-act]');if(!btn||!root.contains(btn))return;
+    if(btn.disabled)return;
+    try{await doAction(btn.dataset.act,btn);}catch(e){notice(e?.message||'Request failed.',true);}
   });
-  root.addEventListener('change',async e=>{
-    if(e.target.id!=='l7-class')return;
-    state.chosenClass=e.target.value;
-    try{await loadStudents();render()}catch(err){note(err.message,true)}
-  });
-  root.addEventListener('submit',async e=>{
-    const form=e.target.closest('[data-form]');if(!form)return;e.preventDefault();
-    if(state.busy)return;state.busy=true;
-    const submit=form.querySelector('button[type=submit],button:not([type])');if(submit)submit.disabled=true;
-    const data=new FormData(form);const email=String(data.get('email')||'').trim();const password=String(data.get('password')||'');
+  root.addEventListener('change',async event=>{
+    if(event.target.id!=='l7-csv')return;
+    const file=event.target.files?.[0];if(!file)return;
     try{
-      if(demo){
-        if(form.dataset.form==='signup')return note('Demo request received. This is not a real account.');
-        return note('Use the Teacher demo or Student demo buttons above to explore.');
+      if(file.size>15000)throw new Error('CSV file is too large.');
+      state.importRows=parseCSV(await file.text());
+      state.notice='Review the names and usernames below before creating accounts.';state.isError=false;render();
+    }catch(e){state.importRows=[];notice(e.message,true);}
+  });
+  root.addEventListener('submit',async event=>{
+    const form=event.target.closest('[data-form]');if(!form)return;
+    event.preventDefault();if(state.busy)return;
+    state.busy=true;
+    const btn=form.querySelector('[type="submit"],button:not([type])');if(btn)btn.disabled=true;
+    const data=new FormData(form);
+    const email=String(data.get('email')||'').trim();
+    const pw=String(data.get('password')||'');
+    try{
+      let r;
+      switch(form.dataset.form){
+        case 'student-login': {
+          const username=normalizedLogin(data.get('username'));
+          if(!LOGIN_PATTERN.test(username))throw new Error('Username format is incorrect.');
+          r=await state.client.auth.signInWithPassword({email:emailFor(username),password:pw});
+          if(r.error)throw new Error('Incorrect username or password.');
+          state.view='student';state.notice='';await refreshUser();break;
+        }
+        case 'teacher-login': {
+          r=await state.client.auth.signInWithPassword({email,password:pw});
+          if(r.error)throw r.error;
+          state.view='teacher';state.notice='';await refreshUser();break;
+        }
+        case 'teacher-signup': {
+          const name=String(data.get('name')||'').trim();
+          if(name.length<2)throw new Error('Enter your name.');
+          r=await state.client.auth.signUp({email,password:pw,options:{data:{display_name:name},emailRedirectTo:location.origin+location.pathname}});
+          if(r.error)throw r.error;
+          state.teacherForm='login';notice('Check your teacher email. A site administrator must assign and approve the teacher role.');break;
+        }
+        case 'teacher-recover': {
+          r=await state.client.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});
+          if(r.error)throw r.error;
+          state.teacherForm='login';notice('If the email exists, a password reset link will be sent.');break;
+        }
+        case 'teacher-reset': {
+          if(pw.length<12)throw new Error('Password must have at least 12 characters.');
+          r=await state.client.auth.updateUser({password:pw});if(r.error)throw r.error;
+          state.teacherForm='login';notice('Password updated.');break;
+        }
+        case 'reset-student': {
+          const newPassword=String(data.get('newPassword')||'');
+          if(newPassword.length<12)throw new Error('Password needs 12 characters.');
+          await callTeacher({action:'resetStudentPassword',studentId:state.resettingId,password:newPassword});
+          state.resettingId=null;notice('Password changed. Give the NEW password privately to the student.');break;
+        }
       }
-      if(form.dataset.form==='signup'){
-        const name=String(data.get('name')||'').trim();
-        if(name.length<2)throw Error('Enter your name.');
-        const r=await state.client.auth.signUp({email,password,options:{data:{display_name:name},emailRedirectTo:location.origin+location.pathname}});
-        if(r.error)throw r.error;
-        state.view='login';state.msg='Check your email to confirm your account (if confirmation is enabled). A teacher must then approve your request.';state.error=false;
-        render();
-        if(r.data?.session)await refreshUser();
-      } else if(form.dataset.form==='login'){
-        const r=await state.client.auth.signInWithPassword({email,password});if(r.error)throw r.error;
-        state.msg='';await refreshUser();
-      } else if(form.dataset.form==='recover'){
-        const r=await state.client.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});if(r.error)throw r.error;
-        state.view='login';note('If the address is registered, a password reset email will be sent.');
-      } else if(form.dataset.form==='reset'){
-        if(password.length<10)throw Error('Password must be at least 10 characters.');
-        const r=await state.client.auth.updateUser({password});if(r.error)throw r.error;
-        state.view='login';note('Password updated.');
-      }
-    }catch(err){note(err.message||'Request failed.',true)}finally{state.busy=false;if(submit&&submit.isConnected)submit.disabled=false;}
+    }catch(e){notice(e?.message||'Request failed.',true)}
+    finally{state.busy=false;if(btn&&btn.isConnected)btn.disabled=false;}
   });
   async function init(){
-    if(demo)return render();
     render();
-    if(!/^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(config.supabaseUrl||'') || !config.publishableKey || /REPLACE|YOUR_KEY/i.test(config.publishableKey))return;
-    try{
-      if(!window.supabase?.createClient){
-        await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';s.onload=resolve;s.onerror=()=>reject(new Error('Supabase library could not be loaded.'));document.head.appendChild(s)});
-      }
-      state.client=window.supabase.createClient(config.supabaseUrl,config.publishableKey);
-      state.client.auth.onAuthStateChange((event)=>{
-        if(event==='PASSWORD_RECOVERY'){state.view='reset';state.msg='';render();}
-        if(event==='SIGNED_OUT'){state.user=null;state.profile=null;state.view='login';render();}
+    if(!/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(String(cfg.supabaseUrl||'')) || !cfg.publishableKey)return;
+    try {
+      if(!window.supabase?.createClient)await new Promise((resolve,reject)=>{
+        const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+        s.onload=resolve;s.onerror=()=>reject(new Error('Cannot load Supabase SDK.'));document.head.appendChild(s);
+      });
+      state.client=window.supabase.createClient(cfg.supabaseUrl,cfg.publishableKey);
+      state.client.auth.onAuthStateChange(event=>{
+        if(event==='PASSWORD_RECOVERY'){state.view='teacher';state.teacherForm='reset';render();}
+        if(event==='SIGNED_OUT'){state.user=null;state.profile=null;state.students=[];state.teacherClasses=[];render();}
       });
       await refreshUser();
-    }catch(err){note('Connection error: '+(err.message||'Unknown error'),true)}
+    }catch(e){notice(`Connection problem: ${e.message}`,true);}
   }
   init();
 })();
