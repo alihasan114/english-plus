@@ -1,4 +1,4 @@
-/* L7 TEST · 5A · Unit 0.2 · Tilda same-origin online quiz · 2026-11-26 */
+/* L7 TEST · 5A · Unit 0.2 · session-aware auth v2 · 2026-11-26 */
 (() => {
 'use strict';
 const host = document.getElementById('l7-unit-0-2-online');
@@ -112,62 +112,124 @@ function showAuth(title,detail,extra=''){
  showView('authGate');$('authHeading').textContent=title;$('authText').textContent=detail;
  $('authError').textContent=extra;$('authError').classList.toggle('hidden',!extra);
 }
+/*
+ * Account session fix: choose the Supabase project that actually has a
+ * signed-in session for this Tilda origin. No credentials or tokens are
+ * transferred between websites or added to links.
+ */
 const CONFIG_SCRIPT='https://alihasan114.github.io/english-plus/l7-config.js?v=20261126';
+const SDK_SCRIPT='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js';
+const ACCOUNTS_PAGE='/5a-accounts';
 function loadScript(url){return new Promise((resolve,reject)=>{
- const s=document.createElement('script');s.src=url;s.async=true;
- s.onload=resolve;s.onerror=()=>reject(new Error('Unable to load '+(url.includes('supabase')?'Supabase library':'project configuration')));
- document.head.appendChild(s);
+  const s=document.createElement('script');s.src=url;s.async=true;
+  s.onload=()=>resolve();
+  s.onerror=()=>reject(new Error('Could not load '+(url===SDK_SCRIPT?'Supabase library':'L7 TEST settings')));
+  document.head.appendChild(s);
 });}
-function findConfig(){
+function validConfig(url,key){
+ return /^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(String(url||'').trim())
+   && /^(sb_publishable_|eyJ)/.test(String(key||'').trim())
+   && !/YOUR|REPLACE|PLACEHOLDER/i.test(String(url)+' '+String(key));
+}
+function configs(){
  const h=window.L7_HEADER_CONFIG||{},a=window.L7_ACCOUNTS_CONFIG||{},t=window.L7_TEST_CONFIG||{};
- const options=[{url:h.supabaseUrl,key:h.publishableKey,source:'Header'},
-  {url:a.supabaseUrl,key:a.publishableKey,source:'Accounts'},
-  {url:t.url,key:t.publishableKey,source:'GitHub configuration'}];
- return options.find(c=>/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(String(c.url||''))
-  && /^(sb_publishable_|eyJ)/.test(String(c.key||''))
-  && !/YOUR|REPLACE|PLACEHOLDER/.test(c.key))||null;
+ const raw=[
+   {url:a.supabaseUrl,key:a.publishableKey,source:'Accounts'},
+   {url:h.supabaseUrl,key:h.publishableKey,source:'Site header'},
+   {url:t.url,key:t.publishableKey,source:'L7 configuration'}
+ ];
+ const seen=new Set();
+ return raw.filter(c=>{
+   if(!validConfig(c.url,c.key))return false;
+   c.url=String(c.url).trim().replace(/\/$/,'');
+   const ref=new URL(c.url).hostname.split('.')[0];
+   if(seen.has(ref))return false;
+   seen.add(ref);c.ref=ref;c.storageKey='sb-'+ref+'-auth-token';
+   try{c.saved=Boolean(localStorage.getItem(c.storageKey))}catch(_e){c.saved=false}
+   return true;
+ }).sort((x,y)=>Number(y.saved)-Number(x.saved));
 }
 let checking=false;
 async function checkAccount(){
- if(checking)return;checking=true;
- showAuth('Checking your L7 TEST account…','Checking the session for this website.');
- try{
+ if(checking)return;
+ checking=true;
+ state.user=null;state.profile=null;state.client=null;
+ showAuth('Checking your L7 TEST account…','Looking for your existing sign-in on this website.');
+ try {
    if(preview){
      state.profile={display_name:'Preview Student',role:'student',status:'approved',class_code:'5A'};
      showView('welcome');$('studentBadge').textContent='Preview Student · 5A';
-     $('welcomeStudent').textContent='Layout preview only — no result is saved. The next block opens when the timer ends.';
+     $('welcomeStudent').textContent='Layout preview only — no result is saved.';
      return;
    }
-   if(window.top!==window)throw Error('The quiz code is running inside an iframe. Install the native T123 script directly on the Tilda page.');
-   if(location.protocol!=='https:')throw Error('Please open the published HTTPS version of l7-test.online.');
-   let cfg=findConfig();
-   if(!cfg){await loadScript(CONFIG_SCRIPT);cfg=findConfig()}
-   if(!cfg)throw Error('Supabase settings not found. Check the site header or l7-config.js file.');
-   if(!window.supabase?.createClient)await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js');
-   if(!window.supabase?.createClient)throw Error('Supabase could not be initialized.');
-   if(!state.client)state.client=window.supabase.createClient(cfg.url,cfg.key);
-   const {data:session,error:se}=await state.client.auth.getSession();
-   if(se)throw se;
-   if(!session?.session){
-     showAuth('Sign in on L7 TEST first','Your account session is not available on this page. Sign in through My account, then return here.',
-       'Current host: '+location.host+' · Configuration: '+cfg.source+' · Check that the account page and the test use the same domain, e.g. l7-test.online (not www).');
+   if(window.top!==window){
+     showAuth('Tilda setup needs updating','This exercise is inside an iframe, so it cannot use the site sign-in.',
+       'Use the direct T123 code for Unit 0.2 instead of an iframe to a GitHub page.');
      return;
    }
-   const {data:ud,error:ue}=await state.client.auth.getUser();
-   if(ue || !ud?.user)throw Error('Could not validate the current login session.');
-   const {data:p,error:pe}=await state.client.from('profiles').select('display_name,role,status,class_code').eq('id',ud.user.id).single();
-   if(pe)throw pe;
-   if(p.role!=='student'||p.status!=='approved'||p.class_code!=='5A'){
-     showAuth('5A Student access required', 'This test is available only to approved 5A students.',
-      'Current account: '+(p.display_name||'unknown')+' · '+p.role+' · '+p.status+' · '+p.class_code);
+   if(location.protocol!=='https:'){
+     showAuth('Use the secure website','Open the published HTTPS page on l7-test.online.');return;
+   }
+   // Accounts page and header can load their settings after the quiz script.
+   // Load the shared public settings as an additional source, not as a forced override.
+   let choices=configs();
+   if(!window.L7_TEST_CONFIG?.url){
+     try{await loadScript(CONFIG_SCRIPT)}catch(_e){/* Header settings might still work */}
+   }
+   choices=configs();
+   if(!choices.length){
+     showAuth('Supabase settings not found','The website cannot identify its Supabase project.',
+       'Check L7 Header settings and the public l7-config.js file.');
      return;
    }
-   state.user=ud.user;state.profile=p;
-   $('studentBadge').textContent=p.display_name+' · Student · 5A';
-   $('welcomeStudent').textContent='Signed in as '+p.display_name+' (5A). The next block opens automatically when the timer ends.';
-   showView('welcome');
- }catch(err){
-   showAuth('Could not check your account','Please open My account, sign in, and then return to Unit 0.2.', String(err?.message||err));
+   if(!window.supabase?.createClient)await loadScript(SDK_SCRIPT);
+   if(!window.supabase?.createClient)throw Error('Supabase library could not start.');
+
+   let foundOtherAccount=null, sessionFound=false, firstError='';
+   for(const cfg of choices){
+     try{
+       const client=window.supabase.createClient(cfg.url,cfg.key,{
+         auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}
+       });
+       const {data:sessionData,error:sessionError}=await client.auth.getSession();
+       if(sessionError){if(!firstError)firstError=sessionError.message;continue;}
+       if(!sessionData?.session)continue;
+       sessionFound=true;
+       const {data:ud,error:ue}=await client.auth.getUser();
+       if(ue||!ud?.user){if(!firstError)firstError=ue?.message||'Session validation failed';continue;}
+       const {data:p,error:pe}=await client.from('profiles')
+         .select('display_name,role,status,class_code').eq('id',ud.user.id).single();
+       if(pe){if(!firstError)firstError=pe.message;continue;}
+       if(p?.role==='student'&&p?.status==='approved'&&p?.class_code==='5A'){
+         state.client=client;state.user=ud.user;state.profile=p;
+         $('studentBadge').textContent=p.display_name+' · Student · 5A';
+         $('welcomeStudent').textContent='Signed in as '+p.display_name+' (5A). Your result will be saved online.';
+         showView('welcome');return;
+       }
+       if(!foundOtherAccount)foundOtherAccount=p;
+     }catch(e){if(!firstError)firstError=String(e?.message||e)}
+   }
+   if(foundOtherAccount){
+     showAuth('Approved 5A Student account required',
+       'The site recognized a signed-in account, but it does not have access to this student test.',
+       'Current account: '+(foundOtherAccount.display_name||'unknown')+
+       ' · '+(foundOtherAccount.role||'?')+' · '+(foundOtherAccount.status||'?')+
+       ' · '+(foundOtherAccount.class_code||'?')+'. Sign in with the approved 5A student account.');
+     return;
+   }
+   const details='Current website: '+location.host+
+     ' · Projects checked: '+choices.map(c=>c.ref+(c.saved?' (stored session)':' (no stored session)')).join(', ')+
+     (firstError?' · Detail: '+firstError:'');
+   if(sessionFound){
+     showAuth('Account session needs refreshing',
+       'A saved session was found but could not be validated. Open My account, sign in and return here.',details);
+   }else{
+     showAuth('Account session not found here',
+       'Sign in through My account on this exact website and then return to Unit 0.2. Do not switch browsers or between www and non-www addresses.',details);
+   }
+ }catch(e){
+   showAuth('Account check could not finish',
+     'Open My account on l7-test.online and try again.',String(e?.message||e));
  }finally{checking=false}
 }
 async function requestFullscreen(){
