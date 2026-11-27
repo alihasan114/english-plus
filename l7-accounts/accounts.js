@@ -142,12 +142,12 @@
     if(!state.client||state.profile?.role!=='teacher')throw new Error('Teacher account required.');
     const session=await state.client.auth.getSession();
     if(!session.data?.session)throw new Error('Teacher session expired. Please sign in again.');
-    const r=await state.client.functions.invoke('l7-student-admin',{body:payload});
+    const r=await state.client.functions.invoke('l7-student-admin-v2',{body:payload});
     if(r.error){
       const ctx=r.error.context;
       const code=Number(ctx?.status||0);
       let reason='The student administration request failed.';
-      if(code===404) reason='HTTP 404: Supabase Edge Function l7-student-admin was not found. Check that it was deployed.';
+      if(code===404) reason='HTTP 404: Supabase Edge Function l7-student-admin-v2 was not found. Check that it was deployed.';
       else if(code===401) reason='HTTP 401: Teacher session was rejected. Sign out and sign in again; check Verify JWT with legacy secret = OFF.';
       else if(code===403) reason='HTTP 403: Teacher permission or the website origin was rejected. Check teacher approval and Edge Function settings.';
       else if(code>=500) reason=`HTTP ${code}: Server error. Check Supabase Edge Function logs.`;
