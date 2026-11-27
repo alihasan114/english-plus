@@ -42,7 +42,7 @@
       return `<div class="l7-card">${tabs()}${content}${options}</div>`;
     }
     return `<div class="l7-card">${tabs()}<h3>Student sign in</h3><p class="l7-muted">Use the personal username and password given by your teacher. No email is needed.</p>
-      <form data-form="student-login">${field('Username','username','text','username','autocapitalize="none" spellcheck="false" minlength="4" maxlength="20" placeholder="5a-rizwan"')}${field('Password','password','password','current-password','minlength="12"')}
+      <form data-form="student-login">${field('Username','username','text','username','autocapitalize="none" spellcheck="false" minlength="4" maxlength="100" placeholder="5a-rizwan"')}${field('Password','password','password','current-password','minlength="12"')}
       <button class="l7-btn l7-wide">Sign in</button></form><p class="l7-note">Forgot your password? Ask your teacher to reset it. Never share your password with classmates.</p></div>`;
   }
   function teacherScreen(){
