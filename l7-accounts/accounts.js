@@ -1,4 +1,4 @@
-/* L7 TEST Accounts v2 — students: Username + Password, teachers: Email + Password.
+/* L7 TEST Accounts v3 — students: Username + Password, teachers: Email + Password.
    This is Tilda page code. NO secret key / password list appears in this file.
    Students are provisioned by their APPROVED 5A teacher through a verified
    Supabase Edge Function. Existing tests use the same Supabase session. */
@@ -13,7 +13,7 @@
   const state = {
     client:null, user:null, profile:null, students:[], teacherClasses:[],
     view:'student', teacherForm:'login', busy:false, notice:'', isError:false,
-    importRows:[], importErrors:[], resettingId:null
+    importRows:[], importErrors:[], resettingId:null, importStatus:'', importStatusError:false
   };
   const $ = s => root.querySelector(s);
   const esc = x => String(x ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -56,8 +56,9 @@
       </div></div>`).join('') || '<p class="l7-muted">No student accounts yet.</p>';
     const preview = state.importRows.length ? `<div class="l7-preview"><p><strong>${state.importRows.length} students ready to create</strong> (passwords hidden)</p>
       <div class="l7-preview-list">${state.importRows.map(s=>`<div>${esc(s.name)} · <code>${esc(s.username)}</code></div>`).join('')}</div>
-      <button type="button" class="l7-btn" data-act="create-batch">Create these accounts</button>
-      <button type="button" class="l7-btn l7-ghost" data-act="clear-batch">Cancel</button></div>` : '';
+      ${state.importStatus?`<div class="l7-import-message ${state.importStatusError?'error':'working'}" role="status" aria-live="polite">${esc(state.importStatus)}</div>`:''}
+      <button type="button" class="l7-btn" data-act="create-batch" ${state.busy?'disabled':''}>${state.busy?'Creating accounts…':'Create these accounts'}</button>
+      <button type="button" class="l7-btn l7-ghost" data-act="clear-batch" ${state.busy?'disabled':''}>Cancel</button></div>` : '';
     const resetStudent=state.students.find(s=>s.id===state.resettingId);
     const resetBlock=resetStudent?`<div class="l7-reset-panel"><h3>New password for ${esc(resetStudent.display_name)}</h3>
         <form data-form="reset-student">${field('New password (12+ characters)','newPassword','password','new-password','minlength="12"')}<button class="l7-btn">Save new password</button>
@@ -143,11 +144,22 @@
     if(!session.data?.session)throw new Error('Teacher session expired. Please sign in again.');
     const r=await state.client.functions.invoke('l7-student-admin',{body:payload});
     if(r.error){
-      let reason='Student administration function error. Check deployment and teacher permissions.';
-      try { const detail=await r.error.context?.json?.();if(detail?.error)reason=detail.error; }catch(_){}
+      const ctx=r.error.context;
+      const code=Number(ctx?.status||0);
+      let reason='The student administration request failed.';
+      if(code===404) reason='HTTP 404: Supabase Edge Function l7-student-admin was not found. Check that it was deployed.';
+      else if(code===401) reason='HTTP 401: Teacher session was rejected. Sign out and sign in again; check Verify JWT with legacy secret = OFF.';
+      else if(code===403) reason='HTTP 403: Teacher permission or the website origin was rejected. Check teacher approval and Edge Function settings.';
+      else if(code>=500) reason=`HTTP ${code}: Server error. Check Supabase Edge Function logs.`;
+      else if(!code) reason='Network/CORS error: cannot reach Supabase Edge Function. Check its deployment and browser connection.';
+      try {
+        const detail=await ctx?.clone?.().json?.();
+        if(detail?.error)reason=`${code?'HTTP '+code+': ':''}${detail.error}`;
+      } catch(_){}
       throw new Error(reason);
     }
     if(r.data?.error)throw new Error(r.data.error);
+    if(r.data?.ok!==true)throw new Error('Unexpected response from the student administration function. Check Supabase logs.');
     return r.data;
   }
   async function doAction(action,button){
@@ -160,18 +172,36 @@
       state.user=null;state.profile=null;state.students=[];state.teacherClasses=[];state.view='student';state.importRows=[];
       notice('Signed out successfully.');return;
     }
-    if(action==='clear-batch'){state.importRows=[];notice('Student import cancelled.');return;}
+    if(action==='clear-batch'){state.importRows=[];state.importStatus='';notice('Student import cancelled.');return;}
     if(action==='cancel-reset'){state.resettingId=null;render();return;}
     if(action==='reset'){state.resettingId=button.dataset.id;state.notice='';render();return;}
     if(action==='create-batch'){
-      if(state.busy)return;state.busy=true;button.disabled=true;
+      if(state.busy)return;
+      if(!state.importRows.length){notice('Please select the CSV file first.',true);return;}
+      state.busy=true;
+      state.importStatus='Creating accounts… Do not click again or close the page.';
+      state.importStatusError=false;
+      render();
       try{
         const r=await callTeacher({action:'createStudents',students:state.importRows});
         state.importRows=[];
-        await getStudents();
+        state.importStatus='';
+        let refreshWarning='';
+        try { await getStudents(); }
+        catch (_) { refreshWarning=' The accounts were processed, but the Students list could not refresh. Reload before attempting any further imports.'; }
         const failures=(r.results||[]).filter(x=>!x.ok).map(x=>`${x.username}: ${x.error}`).join('\n');
-        notice(`Created: ${r.created||0}. Failed: ${r.failed||0}. ${failures}`,(r.failed||0)>0);
-      } finally {state.busy=false;}
+        notice(`Created: ${r.created||0}. Failed: ${r.failed||0}. ${failures}${refreshWarning}`,(r.failed||0)>0||!!refreshWarning);
+        root.querySelector('.l7-status')?.scrollIntoView({block:'center',behavior:'smooth'});
+      }catch(e){
+        state.importStatus=`${e?.message||'Request failed.'} Check the Students list before clicking again, in case the server created the account.`;
+        state.importStatusError=true;
+      } finally {
+        state.busy=false;
+        if(state.importRows.length){
+          render();
+          root.querySelector('.l7-import-message')?.scrollIntoView({block:'center',behavior:'smooth'});
+        }
+      }
       return;
     }
     if(action==='approve'||action==='reject'||action==='approve-all'){
@@ -195,6 +225,7 @@
     try{
       if(file.size>15000)throw new Error('CSV file is too large.');
       state.importRows=parseCSV(await file.text());
+      state.importStatus='';state.importStatusError=false;
       state.notice='Review the names and usernames below before creating accounts.';state.isError=false;render();
     }catch(e){state.importRows=[];notice(e.message,true);}
   });
