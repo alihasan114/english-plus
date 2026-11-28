@@ -142,7 +142,7 @@
     if(!state.client||state.profile?.role!=='teacher')throw new Error('Teacher account required.');
     const session=await state.client.auth.getSession();
     if(!session.data?.session)throw new Error('Teacher session expired. Please sign in again.');
-    const r=await state.client.functions.invoke('l7-student-admin-v2',{body:payload});
+    const r=await state.client.functions.invoke('smart-endpoint',{body:payload});
     if(r.error){
       const ctx=r.error.context;
       const code=Number(ctx?.status||0);
